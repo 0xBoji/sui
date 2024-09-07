@@ -14,6 +14,7 @@ use ethers::types::Address as EthAddress;
 use ethers::types::Log;
 use ethers::types::H256;
 pub use ethers::types::H256 as EthTransactionHash;
+use fastcrypto::encoding::{Encoding, Hex};
 use fastcrypto::hash::{HashFunction, Keccak256};
 use num_enum::TryFromPrimitive;
 use rand::seq::SliceRandom;
@@ -35,6 +36,7 @@ use sui_types::bridge::{
 };
 use sui_types::committee::CommitteeTrait;
 use sui_types::committee::StakeUnit;
+use sui_types::crypto::ToFromBytes;
 use sui_types::digests::{Digest, TransactionDigest};
 use sui_types::message_envelope::{Envelope, Message, VerifiedEnvelope};
 use sui_types::TypeTag;
@@ -116,6 +118,23 @@ impl BridgeCommittee {
 
     pub fn total_blocklisted_stake(&self) -> StakeUnit {
         self.total_blocklisted_stake
+    }
+}
+
+impl core::fmt::Display for BridgeCommittee {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> std::fmt::Result {
+        for m in self.members.values() {
+            writeln!(
+                f,
+                "pubkey: {:?}, url: {:?}, stake: {:?}, blocklisted: {}, eth address: {:x}",
+                Hex::encode(m.pubkey_bytes().as_bytes()),
+                m.base_url,
+                m.voting_power,
+                m.is_blocklisted,
+                m.pubkey_bytes().to_eth_address(),
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -354,7 +373,7 @@ impl BridgeAction {
     // Digest of BridgeAction (with Keccak256 hasher)
     pub fn digest(&self) -> BridgeActionDigest {
         let mut hasher = Keccak256::default();
-        hasher.update(&self.to_bytes());
+        hasher.update(self.to_bytes());
         BridgeActionDigest::new(hasher.finalize().into())
     }
 
@@ -664,7 +683,7 @@ mod tests {
         let action = get_test_sui_to_eth_bridge_action(None, None, None, None, None, None, None);
         assert_eq!(action.approval_threshold(), 3334);
 
-        let action = get_test_eth_to_sui_bridge_action(None, None, None);
+        let action = get_test_eth_to_sui_bridge_action(None, None, None, None);
         assert_eq!(action.approval_threshold(), 3334);
 
         let action = BridgeAction::BlocklistCommitteeAction(BlocklistCommitteeAction {

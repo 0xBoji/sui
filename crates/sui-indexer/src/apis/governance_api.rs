@@ -8,7 +8,6 @@ use async_trait::async_trait;
 use jsonrpsee::{core::RpcResult, RpcModule};
 
 use cached::{proc_macro::cached, SizedCache};
-use diesel::r2d2::R2D2Connection;
 use sui_json_rpc::{governance_api::ValidatorExchangeRates, SuiRpcModule};
 use sui_json_rpc_api::GovernanceReadApiServer;
 use sui_json_rpc_types::{
@@ -24,21 +23,17 @@ use sui_types::{
 };
 
 #[derive(Clone)]
-pub struct GovernanceReadApi<T: R2D2Connection + 'static> {
-    inner: IndexerReader<T>,
+pub struct GovernanceReadApi {
+    inner: IndexerReader,
 }
 
-impl<T: R2D2Connection + 'static> GovernanceReadApi<T> {
-    pub fn new(inner: IndexerReader<T>) -> Self {
+impl GovernanceReadApi {
+    pub fn new(inner: IndexerReader) -> Self {
         Self { inner }
     }
 
     pub async fn get_epoch_info(&self, epoch: Option<EpochId>) -> Result<EpochInfo, IndexerError> {
-        match self
-            .inner
-            .spawn_blocking(move |this| this.get_epoch_info(epoch))
-            .await
-        {
+        match self.inner.get_epoch_info(epoch).await {
             Ok(Some(epoch_info)) => Ok(epoch_info),
             Ok(None) => Err(IndexerError::InvalidArgumentError(format!(
                 "Missing epoch {epoch:?}"
@@ -48,9 +43,7 @@ impl<T: R2D2Connection + 'static> GovernanceReadApi<T> {
     }
 
     async fn get_latest_sui_system_state(&self) -> Result<SuiSystemStateSummary, IndexerError> {
-        self.inner
-            .spawn_blocking(|this| this.get_latest_sui_system_state())
-            .await
+        self.inner.get_latest_sui_system_state().await
     }
 
     async fn get_stakes_by_ids(
@@ -58,7 +51,7 @@ impl<T: R2D2Connection + 'static> GovernanceReadApi<T> {
         ids: Vec<ObjectID>,
     ) -> Result<Vec<DelegatedStake>, IndexerError> {
         let mut stakes = vec![];
-        for stored_object in self.inner.multi_get_objects_in_blocking_task(ids).await? {
+        for stored_object in self.inner.multi_get_objects(ids).await? {
             let object = sui_types::object::Object::try_from(stored_object)?;
             let stake_object = StakedSui::try_from(&object)?;
             stakes.push(stake_object);
@@ -74,7 +67,7 @@ impl<T: R2D2Connection + 'static> GovernanceReadApi<T> {
         let mut stakes = vec![];
         for stored_object in self
             .inner
-            .get_owned_objects_in_blocking_task(
+            .get_owned_objects(
                 owner,
                 Some(SuiObjectDataFilter::StructType(
                     MoveObjectType::staked_sui().into(),
@@ -176,7 +169,7 @@ impl<T: R2D2Connection + 'static> GovernanceReadApi<T> {
     result = true
 )]
 pub async fn exchange_rates(
-    state: &GovernanceReadApi<impl R2D2Connection>,
+    state: &GovernanceReadApi,
     system_state_summary: &SuiSystemStateSummary,
 ) -> Result<Vec<ValidatorExchangeRates>, IndexerError> {
     // Get validator rate tables
@@ -195,7 +188,7 @@ pub async fn exchange_rates(
     // Get inactive validator rate tables
     for df in state
         .inner
-        .get_dynamic_fields_in_blocking_task(
+        .get_dynamic_fields(
             system_state_summary.inactive_pools_id,
             None,
             system_state_summary.inactive_pools_size as usize,
@@ -210,13 +203,7 @@ pub async fn exchange_rates(
         let inactive_pools_id = system_state_summary.inactive_pools_id;
         let validator = state
             .inner
-            .spawn_blocking(move |this| {
-                sui_types::sui_system_state::get_validator_from_table(
-                    &this,
-                    inactive_pools_id,
-                    &pool_id,
-                )
-            })
+            .get_validator_from_table(inactive_pools_id, pool_id)
             .await?;
         tables.push((
             validator.sui_address,
@@ -233,11 +220,7 @@ pub async fn exchange_rates(
         let mut rates = vec![];
         for df in state
             .inner
-            .get_dynamic_fields_raw_in_blocking_task(
-                exchange_rates_id,
-                None,
-                exchange_rates_size as usize,
-            )
+            .get_dynamic_fields_raw(exchange_rates_id, None, exchange_rates_size as usize)
             .await?
         {
             let dynamic_field = df
@@ -262,7 +245,7 @@ pub async fn exchange_rates(
 }
 
 #[async_trait]
-impl<T: R2D2Connection + 'static> GovernanceReadApiServer for GovernanceReadApi<T> {
+impl GovernanceReadApiServer for GovernanceReadApi {
     async fn get_stakes_by_ids(
         &self,
         staked_sui_ids: Vec<ObjectID>,
@@ -301,7 +284,7 @@ impl<T: R2D2Connection + 'static> GovernanceReadApiServer for GovernanceReadApi<
     }
 }
 
-impl<T: R2D2Connection> SuiRpcModule for GovernanceReadApi<T> {
+impl SuiRpcModule for GovernanceReadApi {
     fn rpc(self) -> RpcModule<Self> {
         self.into_rpc()
     }

@@ -106,7 +106,7 @@ impl<'a> TypingVisitorContext for Context<'a> {
         self.env.pop_warning_filter_scope()
     }
 
-    fn visit_module_custom(&mut self, ident: ModuleIdent, mdef: &mut T::ModuleDefinition) -> bool {
+    fn visit_module_custom(&mut self, ident: ModuleIdent, mdef: &T::ModuleDefinition) -> bool {
         let config = self.env.package_config(mdef.package_name);
         if config.flavor != Flavor::Sui {
             // Skip if not sui
@@ -157,7 +157,7 @@ impl<'a> TypingVisitorContext for Context<'a> {
         &mut self,
         module: ModuleIdent,
         name: FunctionName,
-        fdef: &mut T::Function,
+        fdef: &T::Function,
     ) -> bool {
         debug_assert!(self.current_module.as_ref() == Some(&module));
         function(self, name, fdef);
@@ -165,7 +165,7 @@ impl<'a> TypingVisitorContext for Context<'a> {
         true
     }
 
-    fn visit_exp_custom(&mut self, e: &mut T::Exp) -> bool {
+    fn visit_exp_custom(&mut self, e: &T::Exp) -> bool {
         exp(self, e);
         // do not skip recursion
         false
@@ -269,7 +269,7 @@ fn enum_def(context: &mut Context, name: DatatypeName, edef: &N::EnumDefinition)
 // Functions
 //**********************************************************************************************
 
-fn function(context: &mut Context, name: FunctionName, fdef: &mut T::Function) {
+fn function(context: &mut Context, name: FunctionName, fdef: &T::Function) {
     let T::Function {
         compiled_visibility: _,
         visibility,
@@ -868,8 +868,8 @@ fn entry_return(
                 let (declared_loc_opt, declared_abilities) = match tn_ {
                     TypeName_::Multiple(_) => (None, AbilitySet::collection(*tloc)),
                     TypeName_::ModuleType(m, n) => (
-                        Some(context.info.struct_declared_loc(m, n)),
-                        context.info.struct_declared_abilities(m, n).clone(),
+                        Some(context.info.datatype_declared_loc(m, n)),
+                        context.info.datatype_declared_abilities(m, n).clone(),
                     ),
                     TypeName_::Builtin(b) => (None, b.value.declared_abilities(b.loc)),
                 };
@@ -1064,7 +1064,7 @@ fn check_private_transfer(context: &mut Context, loc: Loc, mcall: &ModuleCall) {
             let store_loc = if let Some((first_ty_module, first_ty_name)) = &first_ty_tn {
                 let abilities = context
                     .info
-                    .struct_declared_abilities(first_ty_module, first_ty_name);
+                    .datatype_declared_abilities(first_ty_module, first_ty_name);
                 abilities.ability_loc_(Ability_::Store).unwrap()
             } else {
                 first_ty

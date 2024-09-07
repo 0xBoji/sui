@@ -18,8 +18,8 @@ use sui_types::object::Object;
 use sui_types::object::ObjectRead;
 
 use crate::errors::IndexerError;
-use crate::schema::{objects, objects_history, objects_snapshot};
-use crate::types::{IndexedDeletedObject, IndexedObject, ObjectStatus};
+use crate::schema::{full_objects_history, objects, objects_history, objects_snapshot};
+use crate::types::{owner_to_owner_info, IndexedDeletedObject, IndexedObject, ObjectStatus};
 
 #[derive(Queryable)]
 pub struct DynamicFieldColumn {
@@ -229,30 +229,43 @@ impl From<StoredDeletedObject> for StoredDeletedHistoryObject {
 
 impl From<IndexedObject> for StoredObject {
     fn from(o: IndexedObject) -> Self {
+        let IndexedObject {
+            checkpoint_sequence_number,
+            object,
+            df_info,
+        } = o;
+        let (owner_type, owner_id) = owner_to_owner_info(&object.owner);
+        let coin_type = object
+            .coin_type_maybe()
+            .map(|t| t.to_canonical_string(/* with_prefix */ true));
+        let coin_balance = if coin_type.is_some() {
+            Some(object.get_coin_value_unsafe())
+        } else {
+            None
+        };
         Self {
-            object_id: o.object_id.to_vec(),
-            object_version: o.object_version as i64,
-            object_digest: o.object_digest.into_inner().to_vec(),
-            checkpoint_sequence_number: o.checkpoint_sequence_number as i64,
-            owner_type: o.owner_type as i16,
-            owner_id: o.owner_id.map(|id| id.to_vec()),
-            object_type: o
-                .object
+            object_id: object.id().to_vec(),
+            object_version: object.version().value() as i64,
+            object_digest: object.digest().into_inner().to_vec(),
+            checkpoint_sequence_number: checkpoint_sequence_number as i64,
+            owner_type: owner_type as i16,
+            owner_id: owner_id.map(|id| id.to_vec()),
+            object_type: object
                 .type_()
                 .map(|t| t.to_canonical_string(/* with_prefix */ true)),
-            object_type_package: o.object.type_().map(|t| t.address().to_vec()),
-            object_type_module: o.object.type_().map(|t| t.module().to_string()),
-            object_type_name: o.object.type_().map(|t| t.name().to_string()),
-            serialized_object: bcs::to_bytes(&o.object).unwrap(),
-            coin_type: o.coin_type,
-            coin_balance: o.coin_balance.map(|b| b as i64),
-            df_kind: o.df_info.as_ref().map(|k| match k.type_ {
+            object_type_package: object.type_().map(|t| t.address().to_vec()),
+            object_type_module: object.type_().map(|t| t.module().to_string()),
+            object_type_name: object.type_().map(|t| t.name().to_string()),
+            serialized_object: bcs::to_bytes(&object).unwrap(),
+            coin_type,
+            coin_balance: coin_balance.map(|b| b as i64),
+            df_kind: df_info.as_ref().map(|k| match k.type_ {
                 DynamicFieldType::DynamicField => 0,
                 DynamicFieldType::DynamicObject => 1,
             }),
-            df_name: o.df_info.as_ref().map(|n| bcs::to_bytes(&n.name).unwrap()),
-            df_object_type: o.df_info.as_ref().map(|v| v.object_type.clone()),
-            df_object_id: o.df_info.as_ref().map(|v| v.object_id.to_vec()),
+            df_name: df_info.as_ref().map(|n| bcs::to_bytes(&n.name).unwrap()),
+            df_object_type: df_info.as_ref().map(|v| v.object_type.clone()),
+            df_object_id: df_info.as_ref().map(|v| v.object_id.to_vec()),
         }
     }
 }
@@ -486,7 +499,7 @@ impl TryFrom<StoredObject> for SuiCoin {
         let balance = o
             .coin_balance
             .ok_or(IndexerError::PersistentStorageDataCorruptionError(format!(
-                "Object {} is supposed to be a coin but has an empy coin_balance column",
+                "Object {} is supposed to be a coin but has an empty coin_balance column",
                 coin_object_id,
             )))?;
         Ok(SuiCoin {
@@ -528,6 +541,35 @@ impl TryFrom<CoinBalance> for Balance {
             total_balance: c.coin_balance as u128,
             locked_balance: HashMap::default(),
         })
+    }
+}
+
+#[derive(Queryable, Insertable, Debug, Identifiable, Clone, QueryableByName)]
+#[diesel(table_name = full_objects_history, primary_key(object_id, object_version))]
+pub struct StoredFullHistoryObject {
+    pub object_id: Vec<u8>,
+    pub object_version: i64,
+    pub serialized_object: Option<Vec<u8>>,
+}
+
+impl From<IndexedObject> for StoredFullHistoryObject {
+    fn from(o: IndexedObject) -> Self {
+        let object = o.object;
+        Self {
+            object_id: object.id().to_vec(),
+            object_version: object.version().value() as i64,
+            serialized_object: Some(bcs::to_bytes(&object).unwrap()),
+        }
+    }
+}
+
+impl From<IndexedDeletedObject> for StoredFullHistoryObject {
+    fn from(o: IndexedDeletedObject) -> Self {
+        Self {
+            object_id: o.object_id.to_vec(),
+            object_version: o.object_version as i64,
+            serialized_object: None,
+        }
     }
 }
 

@@ -5,6 +5,7 @@
 //! they should nearly all be tokio::test rather than simtest.
 
 use core::panic;
+use fastcrypto::encoding::Base64;
 use jsonrpsee::{
     core::{client::ClientT, RpcResult},
     rpc_params,
@@ -317,6 +318,63 @@ async fn test_fullnode_traffic_control_spam_blocked() -> Result<(), anyhow::Erro
 }
 
 #[tokio::test]
+async fn test_fullnode_traffic_control_error_blocked() -> Result<(), anyhow::Error> {
+    let txn_count = 5;
+    let policy_config = PolicyConfig {
+        connection_blocklist_ttl_sec: 3,
+        error_policy_type: PolicyType::TestNConnIP(txn_count - 1),
+        dry_run: false,
+        ..Default::default()
+    };
+    let test_cluster = TestClusterBuilder::new()
+        .with_fullnode_policy_config(Some(policy_config))
+        .build()
+        .await;
+
+    let jsonrpc_client = &test_cluster.fullnode_handle.rpc_client;
+    let context = test_cluster.wallet;
+
+    let mut txns = batch_make_transfer_transactions(&context, txn_count as usize).await;
+    assert!(
+        txns.len() >= txn_count as usize,
+        "Expect at least {} txns. Do we generate enough gas objects during genesis?",
+        txn_count,
+    );
+
+    // it should take no more than 4 requests to be added to the blocklist
+    for _ in 0..txn_count {
+        let txn = txns.swap_remove(0);
+        let tx_digest = txn.digest();
+        let (tx_bytes, _signatures) = txn.to_tx_bytes_and_signatures();
+        // create invalid (empty) client signature
+        let signatures: Vec<Base64> = vec![];
+        let params = rpc_params![
+            tx_bytes,
+            signatures,
+            SuiTransactionBlockResponseOptions::new(),
+            ExecuteTransactionRequestType::WaitForLocalExecution
+        ];
+        let response: RpcResult<SuiTransactionBlockResponse> = jsonrpc_client
+            .request("sui_executeTransactionBlock", params.clone())
+            .await;
+        if let Err(err) = response {
+            if err.to_string().contains("Too many requests") {
+                return Ok(());
+            }
+        } else {
+            let SuiTransactionBlockResponse {
+                digest,
+                confirmed_local_execution,
+                ..
+            } = response.unwrap();
+            assert_eq!(&digest, tx_digest);
+            assert!(confirmed_local_execution.unwrap());
+        }
+    }
+    panic!("Expected spam policy to trigger within {txn_count} requests");
+}
+
+#[tokio::test]
 async fn test_validator_traffic_control_error_delegated() -> Result<(), anyhow::Error> {
     let n = 5;
     let port = 65000;
@@ -569,6 +627,7 @@ async fn test_traffic_sketch_no_blocks() {
     assert!(metrics.total_time_blocked < Duration::from_secs(10));
 }
 
+#[ignore]
 #[sim_test]
 async fn test_traffic_sketch_with_slow_blocks() {
     let sketch_config = FreqThresholdConfig {

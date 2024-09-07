@@ -19,6 +19,8 @@ validator_configs:
     admin-interface-port: 8888
     consensus-config:
       db-path: /tmp/foo/
+      db-retention-epochs: ~
+      db-pruner-period-secs: ~
       max-pending-transactions: ~
       max-submit-position: ~
       submit-delay-step-override-millis: ~
@@ -92,18 +94,25 @@ validator_configs:
       concurrency: 0
     indexer-max-subscriptions: ~
     transaction-kv-store-read-config:
-      base-url: ""
+      base-url: "https://transactions.sui.io/"
+      cache-size: 100000
     jwk-fetch-interval-seconds: 3600
     zklogin-oauth-providers:
       Mainnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Testnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Unknown:
         - Apple
@@ -140,6 +149,12 @@ validator_configs:
     execution-cache: passthrough-cache
     enable-soft-bundle: true
     enable-validator-tx-finalizer: true
+    verifier-signing-config:
+      max-per-fun-meter-units: ~
+      max-per-mod-meter-units: ~
+      max-per-pkg-meter-units: ~
+      max-back-edges-per-function: ~
+      max-back-edges-per-module: ~
   - protocol-key-pair:
       value: avYcyVgYMXTyaUYh9IRwLK0gSzl7YF6ZQDAbrS1Bhvo=
     worker-key-pair:
@@ -156,6 +171,8 @@ validator_configs:
     admin-interface-port: 8888
     consensus-config:
       db-path: /tmp/foo/
+      db-retention-epochs: ~
+      db-pruner-period-secs: ~
       max-pending-transactions: ~
       max-submit-position: ~
       submit-delay-step-override-millis: ~
@@ -229,18 +246,25 @@ validator_configs:
       concurrency: 0
     indexer-max-subscriptions: ~
     transaction-kv-store-read-config:
-      base-url: ""
+      base-url: "https://transactions.sui.io/"
+      cache-size: 100000
     jwk-fetch-interval-seconds: 3600
     zklogin-oauth-providers:
       Mainnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Testnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Unknown:
         - Apple
@@ -277,6 +301,12 @@ validator_configs:
     execution-cache: passthrough-cache
     enable-soft-bundle: true
     enable-validator-tx-finalizer: true
+    verifier-signing-config:
+      max-per-fun-meter-units: ~
+      max-per-mod-meter-units: ~
+      max-per-pkg-meter-units: ~
+      max-back-edges-per-function: ~
+      max-back-edges-per-module: ~
   - protocol-key-pair:
       value: OXnx3yM1C/ppgnDMx/o1d49fJs7E05kq11mXNae/O+I=
     worker-key-pair:
@@ -293,6 +323,8 @@ validator_configs:
     admin-interface-port: 8888
     consensus-config:
       db-path: /tmp/foo/
+      db-retention-epochs: ~
+      db-pruner-period-secs: ~
       max-pending-transactions: ~
       max-submit-position: ~
       submit-delay-step-override-millis: ~
@@ -366,18 +398,25 @@ validator_configs:
       concurrency: 0
     indexer-max-subscriptions: ~
     transaction-kv-store-read-config:
-      base-url: ""
+      base-url: "https://transactions.sui.io/"
+      cache-size: 100000
     jwk-fetch-interval-seconds: 3600
     zklogin-oauth-providers:
       Mainnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Testnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Unknown:
         - Apple
@@ -414,6 +453,12 @@ validator_configs:
     execution-cache: passthrough-cache
     enable-soft-bundle: true
     enable-validator-tx-finalizer: true
+    verifier-signing-config:
+      max-per-fun-meter-units: ~
+      max-per-mod-meter-units: ~
+      max-per-pkg-meter-units: ~
+      max-back-edges-per-function: ~
+      max-back-edges-per-module: ~
   - protocol-key-pair:
       value: CyNkjqNVr3HrHTH7f/NLs7u5lUHJzuPAw0PqMTD2y2s=
     worker-key-pair:
@@ -430,6 +475,8 @@ validator_configs:
     admin-interface-port: 8888
     consensus-config:
       db-path: /tmp/foo/
+      db-retention-epochs: ~
+      db-pruner-period-secs: ~
       max-pending-transactions: ~
       max-submit-position: ~
       submit-delay-step-override-millis: ~
@@ -503,18 +550,25 @@ validator_configs:
       concurrency: 0
     indexer-max-subscriptions: ~
     transaction-kv-store-read-config:
-      base-url: ""
+      base-url: "https://transactions.sui.io/"
+      cache-size: 100000
     jwk-fetch-interval-seconds: 3600
     zklogin-oauth-providers:
       Mainnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Testnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Unknown:
         - Apple
@@ -551,6 +605,12 @@ validator_configs:
     execution-cache: passthrough-cache
     enable-soft-bundle: true
     enable-validator-tx-finalizer: true
+    verifier-signing-config:
+      max-per-fun-meter-units: ~
+      max-per-mod-meter-units: ~
+      max-per-pkg-meter-units: ~
+      max-back-edges-per-function: ~
+      max-back-edges-per-module: ~
   - protocol-key-pair:
       value: X/I/kM+KvHcxAKEf2UU6Sr7SpN3bhiE9nP5CuM/iIY0=
     worker-key-pair:
@@ -567,6 +627,8 @@ validator_configs:
     admin-interface-port: 8888
     consensus-config:
       db-path: /tmp/foo/
+      db-retention-epochs: ~
+      db-pruner-period-secs: ~
       max-pending-transactions: ~
       max-submit-position: ~
       submit-delay-step-override-millis: ~
@@ -640,18 +702,25 @@ validator_configs:
       concurrency: 0
     indexer-max-subscriptions: ~
     transaction-kv-store-read-config:
-      base-url: ""
+      base-url: "https://transactions.sui.io/"
+      cache-size: 100000
     jwk-fetch-interval-seconds: 3600
     zklogin-oauth-providers:
       Mainnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Testnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Unknown:
         - Apple
@@ -688,6 +757,12 @@ validator_configs:
     execution-cache: passthrough-cache
     enable-soft-bundle: true
     enable-validator-tx-finalizer: true
+    verifier-signing-config:
+      max-per-fun-meter-units: ~
+      max-per-mod-meter-units: ~
+      max-per-pkg-meter-units: ~
+      max-back-edges-per-function: ~
+      max-back-edges-per-module: ~
   - protocol-key-pair:
       value: N272EiFDyKtxRbDKbyN6ujenJ+skPcRoc/XolpOLGnU=
     worker-key-pair:
@@ -704,6 +779,8 @@ validator_configs:
     admin-interface-port: 8888
     consensus-config:
       db-path: /tmp/foo/
+      db-retention-epochs: ~
+      db-pruner-period-secs: ~
       max-pending-transactions: ~
       max-submit-position: ~
       submit-delay-step-override-millis: ~
@@ -777,18 +854,25 @@ validator_configs:
       concurrency: 0
     indexer-max-subscriptions: ~
     transaction-kv-store-read-config:
-      base-url: ""
+      base-url: "https://transactions.sui.io/"
+      cache-size: 100000
     jwk-fetch-interval-seconds: 3600
     zklogin-oauth-providers:
       Mainnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Testnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Unknown:
         - Apple
@@ -825,6 +909,12 @@ validator_configs:
     execution-cache: passthrough-cache
     enable-soft-bundle: true
     enable-validator-tx-finalizer: true
+    verifier-signing-config:
+      max-per-fun-meter-units: ~
+      max-per-mod-meter-units: ~
+      max-per-pkg-meter-units: ~
+      max-back-edges-per-function: ~
+      max-back-edges-per-module: ~
   - protocol-key-pair:
       value: a74f03IOjL8ZFSWFChFVEi+wiMwHNwNCPDGIYkGfgjs=
     worker-key-pair:
@@ -841,6 +931,8 @@ validator_configs:
     admin-interface-port: 8888
     consensus-config:
       db-path: /tmp/foo/
+      db-retention-epochs: ~
+      db-pruner-period-secs: ~
       max-pending-transactions: ~
       max-submit-position: ~
       submit-delay-step-override-millis: ~
@@ -914,18 +1006,25 @@ validator_configs:
       concurrency: 0
     indexer-max-subscriptions: ~
     transaction-kv-store-read-config:
-      base-url: ""
+      base-url: "https://transactions.sui.io/"
+      cache-size: 100000
     jwk-fetch-interval-seconds: 3600
     zklogin-oauth-providers:
       Mainnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Testnet:
         - Apple
+        - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
+        - Credenza3
         - Facebook
         - Google
+        - KarrierOne
         - Twitch
       Unknown:
         - Apple
@@ -962,6 +1061,12 @@ validator_configs:
     execution-cache: passthrough-cache
     enable-soft-bundle: true
     enable-validator-tx-finalizer: true
+    verifier-signing-config:
+      max-per-fun-meter-units: ~
+      max-per-mod-meter-units: ~
+      max-per-pkg-meter-units: ~
+      max-back-edges-per-function: ~
+      max-back-edges-per-module: ~
 account_keys:
   - Hloy4pnf8pWEHGP+4OFsXz56bLdIJhkD2O+OdKMqCA4=
   - pvMScjoMR/DaN0M5IOxS2VpGC59N6kv6gDm63ufLQ5w=

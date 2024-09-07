@@ -100,6 +100,7 @@ impl Core {
         signals: CoreSignals,
         block_signer: ProtocolKeyPair,
         dag_state: Arc<RwLock<DagState>>,
+        sync_last_known_own_block: bool,
     ) -> Self {
         let last_decided_leader = dag_state.read().last_commit_leader();
         let number_of_leaders = context
@@ -133,7 +134,7 @@ impl Core {
             last_included_ancestors[ancestor.author] = Some(*ancestor);
         }
 
-        let min_propose_round = if context.parameters.is_sync_last_proposed_block_enabled() {
+        let min_propose_round = if sync_last_known_own_block {
             None
         } else {
             // if the sync is disabled then we practically don't want to impose any restriction.
@@ -305,16 +306,9 @@ impl Core {
     /// `> last_known_proposed_round`. At the moment is allowed to call the method only once leading to a panic
     /// if attempt to do multiple times.
     pub(crate) fn set_last_known_proposed_round(&mut self, round: Round) {
-        assert!(
-            self.context
-                .parameters
-                .is_sync_last_proposed_block_enabled(),
-            "Should not attempt to set the last known proposed round if that has been already set"
-        );
-        assert!(
-            self.last_known_proposed_round.is_none(),
-            "Attempted to set the last known proposed round more than once"
-        );
+        if self.last_known_proposed_round.is_some() {
+            panic!("Should not attempt to set the last known proposed round if that has been already set");
+        }
         self.last_known_proposed_round = Some(round);
         info!("Set last known proposed round to {round}");
     }
@@ -390,7 +384,6 @@ impl Core {
                     .saturating_duration_since(self.threshold_clock.get_quorum_ts())
                     .as_millis() as u64,
             );
-
         self.context
             .metrics
             .node_metrics
@@ -409,14 +402,14 @@ impl Core {
         self.context
             .metrics
             .node_metrics
-            .block_ancestors
+            .proposed_block_ancestors
             .observe(ancestors.len() as f64);
         for ancestor in &ancestors {
             let authority = &self.context.committee.authority(ancestor.author()).hostname;
             self.context
                 .metrics
                 .node_metrics
-                .block_ancestors_depth
+                .proposed_block_ancestors_depth
                 .with_label_values(&[authority])
                 .observe(clock_round.saturating_sub(ancestor.round()).into());
         }
@@ -435,6 +428,11 @@ impl Core {
         // Consume the next transactions to be included. Do not drop the guards yet as this would acknowledge
         // the inclusion of transactions. Just let this be done in the end of the method.
         let (transactions, ack_transactions) = self.transaction_consumer.next();
+        self.context
+            .metrics
+            .node_metrics
+            .proposed_block_transactions
+            .observe(transactions.len() as f64);
 
         // Consume the commit votes to be included.
         let commit_votes = self
@@ -461,7 +459,7 @@ impl Core {
         self.context
             .metrics
             .node_metrics
-            .block_size
+            .proposed_block_size
             .observe(serialized.len() as f64);
         // Unnecessary to verify own blocks.
         let verified_block = VerifiedBlock::new_verified(signed_block, serialized);
@@ -864,7 +862,7 @@ impl CoreTextFixture {
                 .with_num_commits_per_schedule(10),
         );
         let (_transaction_client, tx_receiver) = TransactionClient::new(context.clone());
-        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone(), None);
+        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone());
         let (signals, signal_receivers) = CoreSignals::new(context.clone());
         // Need at least one subscriber to the block broadcast channel.
         let block_receiver = signal_receivers.block_broadcast_receiver();
@@ -872,7 +870,7 @@ impl CoreTextFixture {
         let (commit_sender, commit_receiver) = unbounded_channel("consensus_output");
         let commit_observer = CommitObserver::new(
             context.clone(),
-            CommitConsumer::new(commit_sender.clone(), 0, 0),
+            CommitConsumer::new(commit_sender.clone(), 0),
             dag_state.clone(),
             store.clone(),
             leader_schedule.clone(),
@@ -890,6 +888,7 @@ impl CoreTextFixture {
             signals,
             block_signer,
             dag_state,
+            false,
         );
 
         Self {
@@ -931,7 +930,7 @@ mod test {
         let context = Arc::new(context);
         let store = Arc::new(MemStore::new());
         let (_transaction_client, tx_receiver) = TransactionClient::new(context.clone());
-        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone(), None);
+        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone());
 
         // Create test blocks for all the authorities for 4 rounds and populate them in store
         let mut last_round_blocks = genesis_blocks(context.clone());
@@ -970,7 +969,7 @@ mod test {
         let (sender, _receiver) = unbounded_channel("consensus_output");
         let commit_observer = CommitObserver::new(
             context.clone(),
-            CommitConsumer::new(sender.clone(), 0, 0),
+            CommitConsumer::new(sender.clone(), 0),
             dag_state.clone(),
             store.clone(),
             leader_schedule.clone(),
@@ -995,6 +994,7 @@ mod test {
             signals,
             key_pairs.remove(context.own_index.value()).1,
             dag_state.clone(),
+            false,
         );
 
         // New round should be 5
@@ -1041,7 +1041,7 @@ mod test {
         let context = Arc::new(context);
         let store = Arc::new(MemStore::new());
         let (_transaction_client, tx_receiver) = TransactionClient::new(context.clone());
-        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone(), None);
+        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone());
 
         // Create test blocks for all authorities except our's (index = 0).
         let mut last_round_blocks = genesis_blocks(context.clone());
@@ -1087,7 +1087,7 @@ mod test {
         let (sender, _receiver) = unbounded_channel("consensus_output");
         let commit_observer = CommitObserver::new(
             context.clone(),
-            CommitConsumer::new(sender.clone(), 0, 0),
+            CommitConsumer::new(sender.clone(), 0),
             dag_state.clone(),
             store.clone(),
             leader_schedule.clone(),
@@ -1112,6 +1112,7 @@ mod test {
             signals,
             key_pairs.remove(context.own_index.value()).1,
             dag_state.clone(),
+            false,
         );
 
         // New round should be 4
@@ -1171,7 +1172,7 @@ mod test {
             Arc::new(NoopBlockVerifier),
         );
         let (transaction_client, tx_receiver) = TransactionClient::new(context.clone());
-        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone(), None);
+        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone());
         let (signals, signal_receivers) = CoreSignals::new(context.clone());
         // Need at least one subscriber to the block broadcast channel.
         let mut block_receiver = signal_receivers.block_broadcast_receiver();
@@ -1183,7 +1184,7 @@ mod test {
         let (sender, _receiver) = unbounded_channel("consensus_output");
         let commit_observer = CommitObserver::new(
             context.clone(),
-            CommitConsumer::new(sender.clone(), 0, 0),
+            CommitConsumer::new(sender.clone(), 0),
             dag_state.clone(),
             store.clone(),
             leader_schedule.clone(),
@@ -1199,6 +1200,7 @@ mod test {
             signals,
             key_pairs.remove(context.own_index.value()).1,
             dag_state.clone(),
+            false,
         );
 
         // Send some transactions
@@ -1237,12 +1239,7 @@ mod test {
             let transaction: String = bcs::from_bytes(transaction.data()).unwrap();
             assert_eq!(format!("Transaction {i}"), transaction);
         }
-        assert!(
-            total
-                <= context
-                    .protocol_config
-                    .consensus_max_transactions_in_block_bytes()
-        );
+        assert!(total <= context.protocol_config.max_transactions_in_block_bytes());
 
         // genesis blocks should be referenced
         let all_genesis = genesis_blocks(context);
@@ -1284,7 +1281,7 @@ mod test {
         ));
 
         let (_transaction_client, tx_receiver) = TransactionClient::new(context.clone());
-        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone(), None);
+        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone());
         let (signals, signal_receivers) = CoreSignals::new(context.clone());
         // Need at least one subscriber to the block broadcast channel.
         let _block_receiver = signal_receivers.block_broadcast_receiver();
@@ -1292,7 +1289,7 @@ mod test {
         let (sender, _receiver) = unbounded_channel("consensus_output");
         let commit_observer = CommitObserver::new(
             context.clone(),
-            CommitConsumer::new(sender.clone(), 0, 0),
+            CommitConsumer::new(sender.clone(), 0),
             dag_state.clone(),
             store.clone(),
             leader_schedule.clone(),
@@ -1308,6 +1305,7 @@ mod test {
             signals,
             key_pairs.remove(context.own_index.value()).1,
             dag_state.clone(),
+            false,
         );
 
         let mut expected_ancestors = BTreeSet::new();
@@ -1354,7 +1352,7 @@ mod test {
         telemetry_subscribers::init_for_testing();
         let (context, mut key_pairs) = Context::new_for_test(4);
         let context = Arc::new(context.with_parameters(Parameters {
-            sync_last_proposed_block_timeout: Duration::from_millis(2_000),
+            sync_last_known_own_block_timeout: Duration::from_millis(2_000),
             ..Default::default()
         }));
 
@@ -1372,7 +1370,7 @@ mod test {
         ));
 
         let (_transaction_client, tx_receiver) = TransactionClient::new(context.clone());
-        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone(), None);
+        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone());
         let (signals, signal_receivers) = CoreSignals::new(context.clone());
         // Need at least one subscriber to the block broadcast channel.
         let _block_receiver = signal_receivers.block_broadcast_receiver();
@@ -1380,7 +1378,7 @@ mod test {
         let (sender, _receiver) = unbounded_channel("consensus_output");
         let commit_observer = CommitObserver::new(
             context.clone(),
-            CommitConsumer::new(sender.clone(), 0, 0),
+            CommitConsumer::new(sender.clone(), 0),
             dag_state.clone(),
             store.clone(),
             leader_schedule.clone(),
@@ -1396,6 +1394,7 @@ mod test {
             signals,
             key_pairs.remove(context.own_index.value()).1,
             dag_state.clone(),
+            true,
         );
 
         // No new block should have been produced
@@ -1559,7 +1558,7 @@ mod test {
         ));
 
         let (_transaction_client, tx_receiver) = TransactionClient::new(context.clone());
-        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone(), None);
+        let transaction_consumer = TransactionConsumer::new(tx_receiver, context.clone());
         let (signals, signal_receivers) = CoreSignals::new(context.clone());
         // Need at least one subscriber to the block broadcast channel.
         let _block_receiver = signal_receivers.block_broadcast_receiver();
@@ -1567,7 +1566,7 @@ mod test {
         let (sender, _receiver) = unbounded_channel("consensus_output");
         let commit_observer = CommitObserver::new(
             context.clone(),
-            CommitConsumer::new(sender.clone(), 0, 0),
+            CommitConsumer::new(sender.clone(), 0),
             dag_state.clone(),
             store.clone(),
             leader_schedule.clone(),
@@ -1583,6 +1582,7 @@ mod test {
             signals,
             key_pairs.remove(context.own_index.value()).1,
             dag_state.clone(),
+            false,
         );
 
         // No proposal during recovery.

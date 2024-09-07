@@ -1,5 +1,64 @@
 # @mysten/dapp-kit
 
+## 0.14.19
+
+### Patch Changes
+
+- Updated dependencies [22844ae]
+  - @mysten/zksend@0.11.1
+
+## 0.14.18
+
+### Patch Changes
+
+- 012aefe: Support passing network param through to stashed wallet
+- Updated dependencies [4bdef4a]
+- Updated dependencies [569511a]
+  - @mysten/zksend@0.11.0
+  - @mysten/sui@1.8.0
+  - @mysten/wallet-standard@0.13.3
+
+## 0.14.17
+
+### Patch Changes
+
+- Updated dependencies [143cd9d]
+- Updated dependencies [4357ac6]
+- Updated dependencies [4019dd7]
+- Updated dependencies [4019dd7]
+- Updated dependencies [00a974d]
+  - @mysten/sui@1.7.0
+  - @mysten/wallet-standard@0.13.2
+  - @mysten/zksend@0.10.6
+
+## 0.14.16
+
+### Patch Changes
+
+- Updated dependencies [a3e32fe]
+  - @mysten/sui@1.6.0
+  - @mysten/wallet-standard@0.13.1
+  - @mysten/zksend@0.10.5
+
+## 0.14.15
+
+### Patch Changes
+
+- Updated dependencies [0851b31]
+- Updated dependencies [f37b3c2]
+  - @mysten/wallet-standard@0.13.0
+  - @mysten/sui@1.5.0
+  - @mysten/zksend@0.10.4
+
+## 0.14.14
+
+### Patch Changes
+
+- Updated dependencies [4419234]
+  - @mysten/sui@1.4.0
+  - @mysten/wallet-standard@0.12.14
+  - @mysten/zksend@0.10.3
+
 ## 0.14.13
 
 ### Patch Changes

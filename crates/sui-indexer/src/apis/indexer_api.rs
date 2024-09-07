@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use async_trait::async_trait;
-use diesel::r2d2::R2D2Connection;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::types::SubscriptionEmptyError;
 use jsonrpsee::types::SubscriptionResult;
@@ -29,13 +28,13 @@ use sui_types::TypeTag;
 use crate::indexer_reader::IndexerReader;
 use crate::IndexerError;
 
-pub(crate) struct IndexerApi<T: R2D2Connection + 'static> {
-    inner: IndexerReader<T>,
+pub(crate) struct IndexerApi {
+    inner: IndexerReader,
     name_service_config: NameServiceConfig,
 }
 
-impl<T: R2D2Connection + 'static> IndexerApi<T> {
-    pub fn new(inner: IndexerReader<T>, name_service_config: NameServiceConfig) -> Self {
+impl IndexerApi {
+    pub fn new(inner: IndexerReader, name_service_config: NameServiceConfig) -> Self {
         Self {
             inner,
             name_service_config,
@@ -53,7 +52,7 @@ impl<T: R2D2Connection + 'static> IndexerApi<T> {
         let options = options.unwrap_or_default();
         let objects = self
             .inner
-            .get_owned_objects_in_blocking_task(address, filter, cursor, limit + 1)
+            .get_owned_objects(address, filter, cursor, limit + 1)
             .await?;
 
         let mut object_futures = vec![];
@@ -133,7 +132,7 @@ impl<T: R2D2Connection + 'static> IndexerApi<T> {
 }
 
 #[async_trait]
-impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
+impl IndexerApiServer for IndexerApi {
     async fn get_owned_objects(
         &self,
         address: SuiAddress,
@@ -162,7 +161,7 @@ impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
         }
         let mut results = self
             .inner
-            .query_transaction_blocks_in_blocking_task(
+            .query_transaction_blocks(
                 query.filter,
                 query.options.unwrap_or_default(),
                 cursor,
@@ -197,7 +196,7 @@ impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
         let descending_order = descending_order.unwrap_or(false);
         let mut results = self
             .inner
-            .query_events_in_blocking_task(query, cursor, limit + 1, descending_order)
+            .query_events(query, cursor, limit + 1, descending_order)
             .await?;
 
         let has_next_page = results.len() > limit;
@@ -222,7 +221,7 @@ impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
         }
         let mut results = self
             .inner
-            .get_dynamic_fields_in_blocking_task(parent_object_id, cursor, limit + 1)
+            .get_dynamic_fields(parent_object_id, cursor, limit + 1)
             .await?;
 
         let has_next_page = results.len() > limit;
@@ -250,7 +249,7 @@ impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
         .expect("deriving dynamic field id can't fail");
 
         let options = sui_json_rpc_types::SuiObjectDataOptions::full_content();
-        match self.inner.get_object_read_in_blocking_task(id).await? {
+        match self.inner.get_object_read(id).await? {
             sui_types::object::ObjectRead::NotExists(_)
             | sui_types::object::ObjectRead::Deleted(_) => {}
             sui_types::object::ObjectRead::Exists(object_ref, o, layout) => {
@@ -270,11 +269,7 @@ impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
             &name_bcs_value,
         )
         .expect("deriving dynamic field id can't fail");
-        match self
-            .inner
-            .get_object_read_in_blocking_task(dynamic_object_field_id)
-            .await?
-        {
+        match self.inner.get_object_read(dynamic_object_field_id).await? {
             sui_types::object::ObjectRead::NotExists(_)
             | sui_types::object::ObjectRead::Deleted(_) => {}
             sui_types::object::ObjectRead::Exists(object_ref, o, layout) => {
@@ -310,11 +305,7 @@ impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
         let parent_record_id = self.name_service_config.record_field_id(&parent_domain);
 
         // get latest timestamp to check expiration.
-        let current_timestamp = self
-            .inner
-            .spawn_blocking(|this| this.get_latest_checkpoint())
-            .await?
-            .timestamp_ms;
+        let current_timestamp = self.inner.get_latest_checkpoint().await?.timestamp_ms;
 
         // gather the requests to fetch in the multi_get_objs.
         let mut requests = vec![record_id];
@@ -328,7 +319,7 @@ impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
         // We do this as we do not know if the subdomain is a node or leaf record.
         let domains: Vec<_> = self
             .inner
-            .multi_get_objects_in_blocking_task(requests)
+            .multi_get_objects(requests)
             .await?
             .into_iter()
             .map(|o| sui_types::object::Object::try_from(o).ok())
@@ -392,10 +383,8 @@ impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
             has_next_page: false,
         };
 
-        let Some(field_reverse_record_object) = self
-            .inner
-            .get_object_in_blocking_task(reverse_record_id)
-            .await?
+        let Some(field_reverse_record_object) =
+            self.inner.get_object(&reverse_record_id, None).await?
         else {
             return Ok(result);
         };
@@ -428,7 +417,7 @@ impl<T: R2D2Connection + 'static> IndexerApiServer for IndexerApi<T> {
     }
 }
 
-impl<T: R2D2Connection> SuiRpcModule for IndexerApi<T> {
+impl SuiRpcModule for IndexerApi {
     fn rpc(self) -> RpcModule<Self> {
         self.into_rpc()
     }

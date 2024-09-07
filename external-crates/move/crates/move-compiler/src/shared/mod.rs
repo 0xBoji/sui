@@ -12,10 +12,7 @@ use crate::{
         codes::{Category, Declarations, DiagnosticsID, Severity, WarningFilter},
         Diagnostic, Diagnostics, DiagnosticsFormat, WarningFilters,
     },
-    editions::{
-        check_feature_or_error as edition_check_feature, feature_edition_error_msg, Edition,
-        FeatureGate, Flavor,
-    },
+    editions::{check_feature_or_error, feature_edition_error_msg, Edition, FeatureGate, Flavor},
     expansion::ast as E,
     hlir::ast as H,
     naming::ast as N,
@@ -588,7 +585,7 @@ impl CompilationEnv {
         feature: FeatureGate,
         loc: Loc,
     ) -> bool {
-        edition_check_feature(self, self.package_config(package).edition, feature, loc)
+        check_feature_or_error(self, self.package_config(package).edition, feature, loc)
     }
 
     // Returns an error string if if the feature isn't supported, or None otherwise.
@@ -612,6 +609,14 @@ impl CompilationEnv {
         package
             .and_then(|p| self.package_configs.get(&p))
             .unwrap_or(&self.default_config)
+    }
+
+    pub fn package_configs(&self) -> impl Iterator<Item = (Option<Symbol>, &PackageConfig)> {
+        std::iter::once((None, &self.default_config)).chain(
+            self.package_configs
+                .iter()
+                .map(|(n, config)| (Some(*n), config)),
+        )
     }
 
     pub fn set_primitive_type_definers(

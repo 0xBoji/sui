@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::indexer_reader::IndexerReader;
-use diesel::r2d2::R2D2Connection;
 use jsonrpsee::{core::RpcResult, RpcModule};
 use sui_json_rpc::SuiRpcModule;
 use sui_json_rpc_api::{validate_limit, ExtendedApiServer, QUERY_MAX_RESULT_LIMIT_CHECKPOINTS};
@@ -12,18 +11,18 @@ use sui_json_rpc_types::{
 use sui_open_rpc::Module;
 use sui_types::sui_serde::BigInt;
 
-pub(crate) struct ExtendedApi<T: R2D2Connection + 'static> {
-    inner: IndexerReader<T>,
+pub(crate) struct ExtendedApi {
+    inner: IndexerReader,
 }
 
-impl<T: R2D2Connection> ExtendedApi<T> {
-    pub fn new(inner: IndexerReader<T>) -> Self {
+impl ExtendedApi {
+    pub fn new(inner: IndexerReader) -> Self {
         Self { inner }
     }
 }
 
 #[async_trait::async_trait]
-impl<T: R2D2Connection + 'static> ExtendedApiServer for ExtendedApi<T> {
+impl ExtendedApiServer for ExtendedApi {
     async fn get_epochs(
         &self,
         cursor: Option<BigInt<u64>>,
@@ -33,13 +32,11 @@ impl<T: R2D2Connection + 'static> ExtendedApiServer for ExtendedApi<T> {
         let limit = validate_limit(limit, QUERY_MAX_RESULT_LIMIT_CHECKPOINTS)?;
         let mut epochs = self
             .inner
-            .spawn_blocking(move |this| {
-                this.get_epochs(
-                    cursor.map(|x| *x),
-                    limit + 1,
-                    descending_order.unwrap_or(false),
-                )
-            })
+            .get_epochs(
+                cursor.map(|x| *x),
+                limit + 1,
+                descending_order.unwrap_or(false),
+            )
             .await?;
 
         let has_next_page = epochs.len() > limit;
@@ -53,10 +50,7 @@ impl<T: R2D2Connection + 'static> ExtendedApiServer for ExtendedApi<T> {
     }
 
     async fn get_current_epoch(&self) -> RpcResult<EpochInfo> {
-        let stored_epoch = self
-            .inner
-            .spawn_blocking(|this| this.get_latest_epoch_info_from_db())
-            .await?;
+        let stored_epoch = self.inner.get_latest_epoch_info_from_db().await?;
         EpochInfo::try_from(stored_epoch).map_err(Into::into)
     }
 
@@ -73,15 +67,12 @@ impl<T: R2D2Connection + 'static> ExtendedApiServer for ExtendedApi<T> {
     }
 
     async fn get_total_transactions(&self) -> RpcResult<BigInt<u64>> {
-        let latest_checkpoint = self
-            .inner
-            .spawn_blocking(|this| this.get_latest_checkpoint())
-            .await?;
+        let latest_checkpoint = self.inner.get_latest_checkpoint().await?;
         Ok(latest_checkpoint.network_total_transactions.into())
     }
 }
 
-impl<T: R2D2Connection> SuiRpcModule for ExtendedApi<T> {
+impl SuiRpcModule for ExtendedApi {
     fn rpc(self) -> RpcModule<Self> {
         self.into_rpc()
     }

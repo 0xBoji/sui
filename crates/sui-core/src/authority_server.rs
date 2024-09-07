@@ -4,12 +4,10 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use mysten_metrics::histogram::Histogram as MystenHistogram;
 use mysten_metrics::spawn_monitored_task;
-use narwhal_worker::LazyNarwhalClient;
 use prometheus::{
-    register_int_counter_vec_with_registry, register_int_counter_with_registry, IntCounter,
-    IntCounterVec, Registry,
+    register_histogram_with_registry, register_int_counter_vec_with_registry,
+    register_int_counter_with_registry, Histogram, IntCounter, IntCounterVec, Registry,
 };
 use std::{
     io,
@@ -46,7 +44,10 @@ use tokio::task::JoinHandle;
 use tonic::metadata::{Ascii, MetadataValue};
 use tracing::{error, error_span, info, Instrument};
 
-use crate::authority::authority_per_epoch_store::AuthorityPerEpochStore;
+use crate::{
+    authority::authority_per_epoch_store::AuthorityPerEpochStore,
+    mysticeti_adapter::LazyMysticetiClient,
+};
 use crate::{
     authority::AuthorityState,
     consensus_adapter::{ConsensusAdapter, ConsensusAdapterMetrics},
@@ -119,9 +120,8 @@ impl AuthorityServer {
     }
 
     pub fn new_for_test(state: Arc<AuthorityState>) -> Self {
-        let consensus_address = new_local_tcp_address_for_testing();
         let consensus_adapter = Arc::new(ConsensusAdapter::new(
-            Arc::new(LazyNarwhalClient::new(consensus_address)),
+            Arc::new(LazyMysticetiClient::new()),
             state.name,
             Arc::new(ConnectionMonitorStatusForTests {}),
             100_000,
@@ -166,13 +166,14 @@ impl AuthorityServer {
 
 pub struct ValidatorServiceMetrics {
     pub signature_errors: IntCounter,
-    pub tx_verification_latency: MystenHistogram,
-    pub cert_verification_latency: MystenHistogram,
-    pub consensus_latency: MystenHistogram,
-    pub handle_transaction_latency: MystenHistogram,
-    pub submit_certificate_consensus_latency: MystenHistogram,
-    pub handle_certificate_consensus_latency: MystenHistogram,
-    pub handle_certificate_non_consensus_latency: MystenHistogram,
+    pub tx_verification_latency: Histogram,
+    pub cert_verification_latency: Histogram,
+    pub consensus_latency: Histogram,
+    pub handle_transaction_latency: Histogram,
+    pub submit_certificate_consensus_latency: Histogram,
+    pub handle_certificate_consensus_latency: Histogram,
+    pub handle_certificate_non_consensus_latency: Histogram,
+    pub handle_soft_bundle_certificates_consensus_latency: Histogram,
 
     num_rejected_tx_in_epoch_boundary: IntCounter,
     num_rejected_cert_in_epoch_boundary: IntCounter,
@@ -193,41 +194,62 @@ impl ValidatorServiceMetrics {
                 registry,
             )
             .unwrap(),
-            tx_verification_latency: MystenHistogram::new_in_registry(
+            tx_verification_latency: register_histogram_with_registry!(
                 "validator_service_tx_verification_latency",
                 "Latency of verifying a transaction",
+                mysten_metrics::SUBSECOND_LATENCY_SEC_BUCKETS.to_vec(),
                 registry,
-            ),
-            cert_verification_latency: MystenHistogram::new_in_registry(
+            )
+            .unwrap(),
+            cert_verification_latency: register_histogram_with_registry!(
                 "validator_service_cert_verification_latency",
                 "Latency of verifying a certificate",
+                mysten_metrics::SUBSECOND_LATENCY_SEC_BUCKETS.to_vec(),
                 registry,
-            ),
-            consensus_latency: MystenHistogram::new_in_registry(
+            )
+            .unwrap(),
+            consensus_latency: register_histogram_with_registry!(
                 "validator_service_consensus_latency",
                 "Time spent between submitting a shared obj txn to consensus and getting result",
+                mysten_metrics::SUBSECOND_LATENCY_SEC_BUCKETS.to_vec(),
                 registry,
-            ),
-            handle_transaction_latency: MystenHistogram::new_in_registry(
+            )
+            .unwrap(),
+            handle_transaction_latency: register_histogram_with_registry!(
                 "validator_service_handle_transaction_latency",
                 "Latency of handling a transaction",
+                mysten_metrics::SUBSECOND_LATENCY_SEC_BUCKETS.to_vec(),
                 registry,
-            ),
-            handle_certificate_consensus_latency: MystenHistogram::new_in_registry(
+            )
+            .unwrap(),
+            handle_certificate_consensus_latency: register_histogram_with_registry!(
                 "validator_service_handle_certificate_consensus_latency",
                 "Latency of handling a consensus transaction certificate",
+                mysten_metrics::COARSE_LATENCY_SEC_BUCKETS.to_vec(),
                 registry,
-            ),
-            submit_certificate_consensus_latency: MystenHistogram::new_in_registry(
+            )
+            .unwrap(),
+            submit_certificate_consensus_latency: register_histogram_with_registry!(
                 "validator_service_submit_certificate_consensus_latency",
                 "Latency of submit_certificate RPC handler",
+                mysten_metrics::COARSE_LATENCY_SEC_BUCKETS.to_vec(),
                 registry,
-            ),
-            handle_certificate_non_consensus_latency: MystenHistogram::new_in_registry(
+            )
+            .unwrap(),
+            handle_certificate_non_consensus_latency: register_histogram_with_registry!(
                 "validator_service_handle_certificate_non_consensus_latency",
                 "Latency of handling a non-consensus transaction certificate",
+                mysten_metrics::SUBSECOND_LATENCY_SEC_BUCKETS.to_vec(),
                 registry,
-            ),
+            )
+            .unwrap(),
+            handle_soft_bundle_certificates_consensus_latency: register_histogram_with_registry!(
+                "validator_service_handle_soft_bundle_certificates_consensus_latency",
+                "Latency of handling a consensus soft bundle",
+                mysten_metrics::COARSE_LATENCY_SEC_BUCKETS.to_vec(),
+                registry,
+            )
+            .unwrap(),
             num_rejected_tx_in_epoch_boundary: register_int_counter_with_registry!(
                 "validator_service_num_rejected_tx_in_epoch_boundary",
                 "Number of rejected transaction during epoch transitioning",
@@ -451,23 +473,28 @@ impl ValidatorService {
             SuiError::FullNodeCantHandleCertificate.into()
         );
 
-        let shared_object_tx = certificates[0].contains_shared_object();
+        let shared_object_tx = certificates
+            .iter()
+            .any(|cert| cert.contains_shared_object());
 
-        let _metrics_guard = if wait_for_effects {
-            if shared_object_tx {
-                self.metrics
-                    .handle_certificate_consensus_latency
-                    .start_timer()
+        let metrics = if certificates.len() == 1 {
+            if wait_for_effects {
+                if shared_object_tx {
+                    &self.metrics.handle_certificate_consensus_latency
+                } else {
+                    &self.metrics.handle_certificate_non_consensus_latency
+                }
             } else {
-                self.metrics
-                    .handle_certificate_non_consensus_latency
-                    .start_timer()
+                &self.metrics.submit_certificate_consensus_latency
             }
         } else {
-            self.metrics
-                .submit_certificate_consensus_latency
-                .start_timer()
+            // `soft_bundle_validity_check` ensured that all certificates contain shared objects.
+            &self
+                .metrics
+                .handle_soft_bundle_certificates_consensus_latency
         };
+
+        let _metrics_guard = metrics.start_timer();
 
         // 1) Check if the certificate is already executed.
         //    This is only needed when we have only one certificate (not a soft bundle).
@@ -827,6 +854,11 @@ impl ValidatorService {
         request: tonic::Request<HandleSoftBundleCertificatesRequestV3>,
     ) -> WrappedServiceResponse<HandleSoftBundleCertificatesResponseV3> {
         let epoch_store = self.state.load_epoch_store_one_call_per_task();
+        let client_addr = if self.client_id_source.is_none() {
+            self.get_client_ip_addr(&request, &ClientIdSource::SocketAddr)
+        } else {
+            self.get_client_ip_addr(&request, self.client_id_source.as_ref().unwrap())
+        };
         let request = request.into_inner();
 
         let certificates = NonEmpty::from_vec(request.certificates)
@@ -840,6 +872,18 @@ impl ValidatorService {
         self.soft_bundle_validity_check(&certificates, &epoch_store)
             .await?;
 
+        info!(
+            "Received Soft Bundle with {} certificates, from {}, tx digests are [{}]",
+            certificates.len(),
+            client_addr
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
+            certificates
+                .iter()
+                .map(|x| x.digest().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         let span = error_span!("handle_soft_bundle_certificates_v3");
         self.handle_certificates(
             certificates,
@@ -909,6 +953,98 @@ impl ValidatorService {
         Ok((tonic::Response::new(response), Weight::one()))
     }
 
+    fn get_client_ip_addr<T>(
+        &self,
+        request: &tonic::Request<T>,
+        source: &ClientIdSource,
+    ) -> Option<IpAddr> {
+        match source {
+            ClientIdSource::SocketAddr => {
+                let socket_addr: Option<SocketAddr> = request.remote_addr();
+
+                // We will hit this case if the IO type used does not
+                // implement Connected or when using a unix domain socket.
+                // TODO: once we have confirmed that no legitimate traffic
+                // is hitting this case, we should reject such requests that
+                // hit this case.
+                if let Some(socket_addr) = socket_addr {
+                    Some(socket_addr.ip())
+                } else {
+                    if cfg!(msim) {
+                        // Ignore the error from simtests.
+                    } else if cfg!(test) {
+                        panic!("Failed to get remote address from request");
+                    } else {
+                        self.metrics.connection_ip_not_found.inc();
+                        error!("Failed to get remote address from request");
+                    }
+                    None
+                }
+            }
+            ClientIdSource::XForwardedFor(num_hops) => {
+                let do_header_parse = |op: &MetadataValue<Ascii>| {
+                    match op.to_str() {
+                        Ok(header_val) => {
+                            let header_contents =
+                                header_val.split(',').map(str::trim).collect::<Vec<_>>();
+                            if *num_hops == 0 {
+                                error!(
+                                    "x-forwarded-for: 0 specified. x-forwarded-for contents: {:?}. Please assign nonzero value for \
+                                    number of hops here, or use `socket-addr` client-id-source type if requests are not being proxied \
+                                    to this node. Skipping traffic controller request handling.",
+                                    header_contents,
+                                );
+                                return None;
+                            }
+                            let contents_len = header_contents.len();
+                            let Some(client_ip) = header_contents.get(contents_len - num_hops)
+                            else {
+                                error!(
+                                    "x-forwarded-for header value of {:?} contains {} values, but {} hops were specificed. \
+                                    Expected at least {} values. Skipping traffic controller request handling.",
+                                    header_contents,
+                                    contents_len,
+                                    num_hops,
+                                    contents_len,
+                                );
+                                return None;
+                            };
+                            client_ip.parse::<IpAddr>().ok().or_else(|| {
+                                client_ip.parse::<SocketAddr>().ok().map(|socket_addr| socket_addr.ip()).or_else(|| {
+                                    self.metrics.forwarded_header_parse_error.inc();
+                                    error!(
+                                        "Failed to parse x-forwarded-for header value of {:?} to ip address or socket. \
+                                        Please ensure that your proxy is configured to resolve client domains to an \
+                                        IP address before writing header",
+                                        client_ip,
+                                    );
+                                    None
+                                })
+                            })
+                        }
+                        Err(e) => {
+                            // TODO: once we have confirmed that no legitimate traffic
+                            // is hitting this case, we should reject such requests that
+                            // hit this case.
+                            self.metrics.forwarded_header_invalid.inc();
+                            error!("Invalid UTF-8 in x-forwarded-for header: {:?}", e);
+                            None
+                        }
+                    }
+                };
+                if let Some(op) = request.metadata().get("x-forwarded-for") {
+                    do_header_parse(op)
+                } else if let Some(op) = request.metadata().get("X-Forwarded-For") {
+                    do_header_parse(op)
+                } else {
+                    self.metrics.forwarded_header_not_included.inc();
+                    error!("x-forwarded-for header not present for request despite node configuring x-forwarded-for tracking type");
+                    None
+                }
+            }
+        }
+    }
+
     async fn handle_traffic_req(&self, client: Option<IpAddr>) -> Result<(), tonic::Status> {
         if let Some(traffic_controller) = &self.traffic_controller {
             if !traffic_controller.check(&client, &None).await {
@@ -963,7 +1099,7 @@ fn make_tonic_request_for_testing<T>(message: T) -> tonic::Request<T> {
 
 // TODO: refine error matching here
 fn normalize(err: SuiError) -> Weight {
-    match dbg!(err) {
+    match err {
         SuiError::UserInputError { .. }
         | SuiError::InvalidSignature { .. }
         | SuiError::SignerSignatureAbsent { .. }
@@ -985,89 +1121,7 @@ macro_rules! handle_with_decoration {
             return $self.$func_name($request).await.map(|(result, _)| result);
         }
 
-        let client = match $self.client_id_source.as_ref().unwrap() {
-            ClientIdSource::SocketAddr => {
-                let socket_addr: Option<SocketAddr> = $request.remote_addr();
-
-                // We will hit this case if the IO type used does not
-                // implement Connected or when using a unix domain socket.
-                // TODO: once we have confirmed that no legitimate traffic
-                // is hitting this case, we should reject such requests that
-                // hit this case.
-                if let Some(socket_addr) = socket_addr {
-                    Some(socket_addr.ip())
-                } else {
-                    if cfg!(msim) {
-                        // Ignore the error from simtests.
-                    } else if cfg!(test) {
-                        panic!("Failed to get remote address from request");
-                    } else {
-                        $self.metrics.connection_ip_not_found.inc();
-                        error!("Failed to get remote address from request");
-                    }
-                    None
-                }
-            }
-            ClientIdSource::XForwardedFor(num_hops) => {
-                let do_header_parse = |op: &MetadataValue<Ascii>| {
-                    match op.to_str() {
-                        Ok(header_val) => {
-                            let header_contents = header_val.split(',').map(str::trim).collect::<Vec<_>>();
-                            if *num_hops == 0 {
-                                error!(
-                                    "x-forwarded-for: 0 specified. x-forwarded-for contents: {:?}. Please assign nonzero value for \
-                                    number of hops here, or use `socket-addr` client-id-source type if requests are not being proxied \
-                                    to this node. Skipping traffic controller request handling.",
-                                    header_contents,
-                                );
-                                return None;
-                            }
-                            let contents_len = header_contents.len();
-                            let Some(client_ip) = header_contents.get(contents_len - num_hops) else {
-                                error!(
-                                    "x-forwarded-for header value of {:?} contains {} values, but {} hops were specificed. \
-                                    Expected at least {} values. Skipping traffic controller request handling.",
-                                    header_contents,
-                                    contents_len,
-                                    num_hops,
-                                    contents_len,
-                                );
-                                return None;
-                            };
-                            client_ip.parse::<IpAddr>().ok().or_else(|| {
-                                client_ip.parse::<SocketAddr>().ok().map(|socket_addr| socket_addr.ip()).or_else(|| {
-                                    $self.metrics.forwarded_header_parse_error.inc();
-                                    error!(
-                                        "Failed to parse x-forwarded-for header value of {:?} to ip address or socket. \
-                                        Please ensure that your proxy is configured to resolve client domains to an \
-                                        IP address before writing header",
-                                        client_ip,
-                                    );
-                                    None
-                                })
-                            })
-                        }
-                        Err(e) => {
-                            // TODO: once we have confirmed that no legitimate traffic
-                            // is hitting this case, we should reject such requests that
-                            // hit this case.
-                            $self.metrics.forwarded_header_invalid.inc();
-                            error!("Invalid UTF-8 in x-forwarded-for header: {:?}", e);
-                            None
-                        }
-                    }
-                };
-                if let Some(op) = $request.metadata().get("x-forwarded-for") {
-                    do_header_parse(op)
-                } else if let Some(op) = $request.metadata().get("X-Forwarded-For") {
-                    do_header_parse(op)
-                } else {
-                    $self.metrics.forwarded_header_not_included.inc();
-                    error!("x-forwarded-for header not present for request despite node configuring x-forwarded-for tracking type");
-                    None
-                }
-            }
-        };
+        let client = $self.get_client_ip_addr(&$request, $self.client_id_source.as_ref().unwrap());
 
         // check if either IP is blocked, in which case return early
         $self.handle_traffic_req(client.clone()).await?;

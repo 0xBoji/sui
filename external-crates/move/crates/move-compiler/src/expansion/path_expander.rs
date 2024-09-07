@@ -674,6 +674,7 @@ impl PathExpander for Move2024PathExpander {
                 PN::Single(path_entry!(name, tyargs, is_macro))
                     if !is_valid_datatype_or_constant_name(&name.to_string()) =>
                 {
+                    self.ide_autocomplete_suggestion(context, loc);
                     (EN::Name(name), tyargs, is_macro)
                 }
                 _ => {
@@ -1036,6 +1037,7 @@ impl PathExpander for LegacyPathExpander {
                 make_access_result(sp(name.loc, access), tyargs, is_macro)
             }
             (Access::Term, single_entry!(name, tyargs, is_macro)) => {
+                self.ide_autocomplete_suggestion(context, loc);
                 make_access_result(sp(name.loc, EN::Name(name)), tyargs, is_macro)
             }
             (Access::Module, single_entry!(_name, _tyargs, _is_macro)) => {
@@ -1215,10 +1217,10 @@ impl PathExpander for LegacyPathExpander {
         if context.env.ide_mode() && context.is_source_definition {
             let mut info = AliasAutocompleteInfo::new();
             for (name, addr) in context.named_address_mapping.unwrap().iter() {
-                info.addresses.insert((*name, *addr));
+                info.addresses.insert(*name, *addr);
             }
             for (_, name, (_, mident)) in self.aliases.modules.iter() {
-                info.modules.insert((*name, *mident));
+                info.modules.insert(*name, *mident);
             }
             for (_, name, (_, (mident, member))) in self.aliases.members.iter() {
                 info.members.insert((*name, *mident, *member));

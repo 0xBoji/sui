@@ -4,7 +4,6 @@
 use super::governance_api::GovernanceReadApi;
 use crate::indexer_reader::IndexerReader;
 use async_trait::async_trait;
-use diesel::r2d2::R2D2Connection;
 use move_core_types::language_storage::StructTag;
 use sui_json_rpc::transaction_builder_api::TransactionBuilderApi as SuiTransactionBuilderApi;
 use sui_json_rpc_types::{SuiObjectDataFilter, SuiObjectDataOptions, SuiObjectResponse};
@@ -12,19 +11,19 @@ use sui_transaction_builder::DataReader;
 use sui_types::base_types::{ObjectID, ObjectInfo, SuiAddress};
 use sui_types::object::Object;
 
-pub(crate) struct TransactionBuilderApi<T: R2D2Connection + 'static> {
-    inner: IndexerReader<T>,
+pub(crate) struct TransactionBuilderApi {
+    inner: IndexerReader,
 }
 
-impl<T: R2D2Connection> TransactionBuilderApi<T> {
+impl TransactionBuilderApi {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(inner: IndexerReader<T>) -> SuiTransactionBuilderApi {
+    pub fn new(inner: IndexerReader) -> SuiTransactionBuilderApi {
         SuiTransactionBuilderApi::new_with_data_reader(std::sync::Arc::new(Self { inner }))
     }
 }
 
 #[async_trait]
-impl<T: R2D2Connection> DataReader for TransactionBuilderApi<T> {
+impl DataReader for TransactionBuilderApi {
     async fn get_owned_objects(
         &self,
         address: SuiAddress,
@@ -32,7 +31,7 @@ impl<T: R2D2Connection> DataReader for TransactionBuilderApi<T> {
     ) -> Result<Vec<ObjectInfo>, anyhow::Error> {
         let stored_objects = self
             .inner
-            .get_owned_objects_in_blocking_task(
+            .get_owned_objects(
                 address,
                 Some(SuiObjectDataFilter::StructType(object_type)),
                 None,
@@ -56,10 +55,7 @@ impl<T: R2D2Connection> DataReader for TransactionBuilderApi<T> {
         object_id: ObjectID,
         options: SuiObjectDataOptions,
     ) -> Result<SuiObjectResponse, anyhow::Error> {
-        let result = self
-            .inner
-            .get_object_read_in_blocking_task(object_id)
-            .await?;
+        let result = self.inner.get_object_read(object_id).await?;
         Ok((result, options).try_into()?)
     }
 

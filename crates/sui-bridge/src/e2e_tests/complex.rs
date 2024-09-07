@@ -35,13 +35,14 @@ async fn test_sui_bridge_paused() {
     // Setup bridge test env
     let bridge_test_cluster = BridgeTestClusterBuilder::new()
         .with_eth_env(true)
+        .with_bridge_cluster(true)
+        .with_num_validators(4)
         .with_approved_governance_actions(vec![
             vec![pause_action.clone(), unpause_action.clone()],
-            vec![pause_action.clone(), unpause_action.clone()],
-            vec![pause_action.clone(), unpause_action.clone()],
+            vec![unpause_action.clone()],
+            vec![unpause_action.clone()],
             vec![],
         ])
-        .with_bridge_cluster(true)
         .build()
         .await;
 
@@ -53,7 +54,7 @@ async fn test_sui_bridge_paused() {
     assert!(!bridge_client.get_bridge_summary().await.unwrap().is_frozen);
 
     // try bridge from eth and verify it works on sui
-    initiate_bridge_eth_to_sui(&bridge_test_cluster, 10, 10 * 100_000_000, TOKEN_ID_ETH, 0)
+    initiate_bridge_eth_to_sui(&bridge_test_cluster, 10, 0)
         .await
         .unwrap();
     // verify Eth was transferred to Sui address
@@ -106,9 +107,7 @@ async fn test_sui_bridge_paused() {
     assert!(bridge_client.get_bridge_summary().await.unwrap().is_frozen);
 
     // Transfer from eth to sui should fail on Sui
-    let eth_to_sui_bridge_action =
-        initiate_bridge_eth_to_sui(&bridge_test_cluster, 10, 10 * 100_000_000, TOKEN_ID_ETH, 1)
-            .await;
+    let eth_to_sui_bridge_action = initiate_bridge_eth_to_sui(&bridge_test_cluster, 10, 1).await;
     assert!(eth_to_sui_bridge_action.is_err());
     // message should not be recorded on Sui when the bridge is paused
     let res = bridge_test_cluster

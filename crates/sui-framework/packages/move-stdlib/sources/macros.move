@@ -3,6 +3,8 @@
 
 /// This module holds shared implementation of macros used in `std`
 module std::macros {
+    use std::string::String;
+
     public macro fun num_max($x: _, $y: _): _ {
         let x = $x;
         let y = $y;
@@ -68,6 +70,20 @@ module std::macros {
         res as $T
     }
 
+    public macro fun num_to_string($x: _): String {
+        let mut x = $x;
+        if (x == 0) {
+            return b"0".to_string()
+        };
+        let mut buffer = vector[];
+        while (x != 0) {
+            buffer.push_back(((48 + x % 10) as u8));
+            x = x / 10;
+        };
+        buffer.reverse();
+        buffer.to_string()
+    }
+
     public macro fun range_do($start: _, $stop: _, $f: |_|) {
         let mut i = $start;
         let stop = $stop;
@@ -99,4 +115,35 @@ module std::macros {
     public macro fun do_eq($stop: _, $f: |_|) {
         range_do_eq!(0, $stop, $f)
     }
+
+    public macro fun try_as_u8($x: _): Option<u8> {
+        let x = $x;
+        if (x > 0xFF) option::none()
+        else option::some(x as u8)
+    }
+
+    public macro fun try_as_u16($x: _): Option<u16> {
+        let x = $x;
+        if (x > 0xFFFF) option::none()
+        else option::some(x as u16)
+    }
+
+    public macro fun try_as_u32($x: _): Option<u32> {
+        let x = $x;
+        if (x > 0xFFFF_FFFF) option::none()
+        else option::some(x as u32)
+    }
+
+    public macro fun try_as_u64($x: _): Option<u64> {
+        let x = $x;
+        if (x > 0xFFFF_FFFF_FFFF_FFFF) option::none()
+        else option::some(x as u64)
+    }
+
+    public macro fun try_as_u128($x: _): Option<u128> {
+        let x = $x;
+        if (x > 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF) option::none()
+        else option::some(x as u128)
+    }
+
 }

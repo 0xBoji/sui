@@ -6,7 +6,11 @@ license = "Apache-2.0"
 publish = false
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
+async-trait.workspace = true
 anemo.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
@@ -52,8 +56,6 @@ move-vm-profiler.workspace = true
 num-traits = "0.2.18"
 num-bigint = { version = "0.4", default-features = false, features = ["rand"] }
 
-narwhal-config.workspace = true
-narwhal-crypto.workspace = true
 sui-protocol-config.workspace = true
 shared-crypto.workspace = true
 mysten-network.workspace = true

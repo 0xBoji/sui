@@ -39,10 +39,10 @@ use typed_store::rocks::{
 };
 use typed_store::traits::Map;
 use typed_store::traits::{TableSummary, TypedStoreDebug};
-use typed_store_derive::DBMapUtils;
+use typed_store::DBMapUtils;
 
 type OwnerIndexKey = (SuiAddress, ObjectID);
-type CoinIndexKey = (SuiAddress, String, ObjectID);
+pub type CoinIndexKey = (SuiAddress, String, ObjectID);
 type DynamicFieldKey = (ObjectID, ObjectID);
 type EventId = (TxSequenceNumber, usize);
 type EventIndex = (TransactionEventsDigest, TransactionDigest, u64);
@@ -129,7 +129,7 @@ impl IndexStoreMetrics {
 pub struct IndexStoreCaches {
     per_coin_type_balance: ShardedLruCache<(SuiAddress, TypeTag), SuiResult<TotalBalance>>,
     all_balances: ShardedLruCache<SuiAddress, SuiResult<Arc<HashMap<TypeTag, TotalBalance>>>>,
-    locks: MutexTable<SuiAddress>,
+    pub locks: MutexTable<SuiAddress>,
 }
 
 #[derive(Default)]
@@ -229,7 +229,7 @@ impl IndexStoreTables {
 pub struct IndexStore {
     next_sequence_number: AtomicU64,
     tables: IndexStoreTables,
-    caches: IndexStoreCaches,
+    pub caches: IndexStoreCaches,
     metrics: Arc<IndexStoreMetrics>,
     max_type_length: u64,
     remove_deprecated_tables: bool,
