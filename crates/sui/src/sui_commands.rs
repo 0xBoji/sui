@@ -7,7 +7,7 @@ use crate::fire_drill::{run_fire_drill, FireDrill};
 use crate::genesis_ceremony::{run, Ceremony};
 use crate::keytool::KeyToolCommand;
 use crate::validator_commands::SuiValidatorCommand;
-use anyhow::{anyhow, bail, ensure};
+use anyhow::{anyhow, bail, ensure, Context};
 use clap::*;
 use fastcrypto::traits::KeyPair;
 use move_analyzer::analyzer;
@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fs, io};
 use sui_bridge::config::BridgeCommitteeConfig;
+use sui_bridge::metrics::BridgeMetrics;
 use sui_bridge::sui_client::SuiBridgeClient;
 use sui_bridge::sui_transaction_builder::build_committee_register_transaction;
 use sui_config::node::Genesis;
@@ -504,7 +505,8 @@ impl SuiCommand {
                 let rgp = context.get_reference_gas_price().await?;
                 let rpc_url = &context.config.get_active_env()?.rpc;
                 println!("rpc_url: {}", rpc_url);
-                let sui_bridge_client = SuiBridgeClient::new(rpc_url).await?;
+                let bridge_metrics = Arc::new(BridgeMetrics::new_for_testing());
+                let sui_bridge_client = SuiBridgeClient::new(rpc_url, bridge_metrics).await?;
                 let bridge_arg = sui_bridge_client
                     .get_mutable_bridge_object_arg_must_succeed()
                     .await;
@@ -1138,10 +1140,26 @@ async fn prompt_if_no_config(
         };
 
         if let Some(env) = env {
-            let keystore_path = wallet_conf_path
-                .parent()
-                .unwrap_or(&sui_config_dir()?)
-                .join(SUI_KEYSTORE_FILENAME);
+            let keystore_path = match wallet_conf_path.parent() {
+                // Wallet config was created in the current directory as a relative path.
+                Some(parent) if parent.as_os_str().is_empty() => {
+                    std::env::current_dir().context("Couldn't find current directory")?
+                }
+
+                // Wallet config was given a path with some parent (could be relative or absolute).
+                Some(parent) => parent
+                    .canonicalize()
+                    .context("Could not find sui config directory")?,
+
+                // No parent component and the wallet config was the empty string, use the default
+                // config.
+                None if wallet_conf_path.as_os_str().is_empty() => sui_config_dir()?,
+
+                // Wallet config was requested at the root of the file system ...for some reason.
+                None => wallet_conf_path.to_owned(),
+            }
+            .join(SUI_KEYSTORE_FILENAME);
+
             let mut keystore = Keystore::from(FileBasedKeystore::new(&keystore_path)?);
             let key_scheme = if accept_defaults {
                 SignatureScheme::ED25519

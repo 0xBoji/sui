@@ -120,12 +120,16 @@ validator_configs:
         - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
         - Credenza3
         - Facebook
+        - FanTV
         - Google
         - Kakao
         - KarrierOne
         - Microsoft
+        - Onefc
+        - Playtron
         - Slack
         - TestIssuer
+        - Threedos
         - Twitch
     authority-overload-config:
       max-txn-age-in-queue:
@@ -272,12 +276,16 @@ validator_configs:
         - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
         - Credenza3
         - Facebook
+        - FanTV
         - Google
         - Kakao
         - KarrierOne
         - Microsoft
+        - Onefc
+        - Playtron
         - Slack
         - TestIssuer
+        - Threedos
         - Twitch
     authority-overload-config:
       max-txn-age-in-queue:
@@ -424,12 +432,16 @@ validator_configs:
         - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
         - Credenza3
         - Facebook
+        - FanTV
         - Google
         - Kakao
         - KarrierOne
         - Microsoft
+        - Onefc
+        - Playtron
         - Slack
         - TestIssuer
+        - Threedos
         - Twitch
     authority-overload-config:
       max-txn-age-in-queue:
@@ -576,12 +588,16 @@ validator_configs:
         - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
         - Credenza3
         - Facebook
+        - FanTV
         - Google
         - Kakao
         - KarrierOne
         - Microsoft
+        - Onefc
+        - Playtron
         - Slack
         - TestIssuer
+        - Threedos
         - Twitch
     authority-overload-config:
       max-txn-age-in-queue:
@@ -728,12 +744,16 @@ validator_configs:
         - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
         - Credenza3
         - Facebook
+        - FanTV
         - Google
         - Kakao
         - KarrierOne
         - Microsoft
+        - Onefc
+        - Playtron
         - Slack
         - TestIssuer
+        - Threedos
         - Twitch
     authority-overload-config:
       max-txn-age-in-queue:
@@ -880,12 +900,16 @@ validator_configs:
         - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
         - Credenza3
         - Facebook
+        - FanTV
         - Google
         - Kakao
         - KarrierOne
         - Microsoft
+        - Onefc
+        - Playtron
         - Slack
         - TestIssuer
+        - Threedos
         - Twitch
     authority-overload-config:
       max-txn-age-in-queue:
@@ -1032,12 +1056,16 @@ validator_configs:
         - "AwsTenant-region:us-east-1-tenant_id:us-east-1_qPsZxYqd8"
         - Credenza3
         - Facebook
+        - FanTV
         - Google
         - Kakao
         - KarrierOne
         - Microsoft
+        - Onefc
+        - Playtron
         - Slack
         - TestIssuer
+        - Threedos
         - Twitch
     authority-overload-config:
       max-txn-age-in-queue:
@@ -1074,4 +1102,3 @@ account_keys:
   - mfPjCoE6SX0Sl84MnmNS/LS+tfPpkn7I8tziuk2g0WM=
   - 5RWlYF22jS9i76zLl8jP2D3D8GC5ht+IP1dWUBGZxi8=
 genesis: "[fake genesis]"
-

@@ -11,12 +11,23 @@ import {
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import * as path from 'path';
-import { Runtime, RuntimeEvents } from './runtime';
+import { Runtime, RuntimeEvents, IRuntimeStack } from './runtime';
 
 const enum LogLevel {
     Log = 'log',
     Verbose = 'verbose',
     None = 'none'
+}
+
+/**
+ * Customized stack trace response that includes additional data.
+ */
+interface CustomizedStackTraceResponse extends DebugProtocol.StackTraceResponse {
+    body: {
+        stackFrames: StackFrame[];
+        totalFrames?: number;
+        optimized_lines: number[];
+    };
 }
 
 /**
@@ -137,7 +148,10 @@ export class MoveDebugSession extends LoggingDebugSession {
         this.sendEvent(new InitializedEvent());
     }
 
-    protected async launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments): Promise<void> {
+    protected async launchRequest(
+        response: DebugProtocol.LaunchResponse,
+        args: ILaunchRequestArguments
+    ): Promise<void> {
         logger.setup(convertLoggerLogLevel(args.logLevel ?? LogLevel.None), false);
         logger.log("Launching trace viewer for file: " + args.source + " and trace: " + args.traceInfo);
         try {
@@ -150,7 +164,10 @@ export class MoveDebugSession extends LoggingDebugSession {
         this.sendEvent(new StoppedEvent("entry", MoveDebugSession.THREAD_ID));
     }
 
-    protected configurationDoneRequest(response: DebugProtocol.ConfigurationDoneResponse, args: DebugProtocol.ConfigurationDoneArguments): void {
+    protected configurationDoneRequest(
+        response: DebugProtocol.ConfigurationDoneResponse,
+        _args: DebugProtocol.ConfigurationDoneArguments
+    ): void {
         this.sendResponse(response);
     }
 
@@ -163,15 +180,22 @@ export class MoveDebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
-    protected stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): void {
+    protected stackTraceRequest(
+        response: CustomizedStackTraceResponse,
+        args: DebugProtocol.StackTraceArguments
+    ): void {
         try {
             const runtimeStack = this.runtime.stack();
+            const stack_height = runtimeStack.frames.length;
             response.body = {
                 stackFrames: runtimeStack.frames.map(frame => {
                     const fileName = path.basename(frame.file);
                     return new StackFrame(frame.id, frame.name, new Source(fileName, frame.file), frame.line);
                 }).reverse(),
-                totalFrames: runtimeStack.frames.length
+                totalFrames: stack_height,
+                optimized_lines: stack_height > 0
+                    ? runtimeStack.frames[stack_height - 1].sourceMap.optimized_lines
+                    : []
             };
         } catch (err) {
             response.success = false;
@@ -180,9 +204,16 @@ export class MoveDebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
-    protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
+    protected nextRequest(
+        response: DebugProtocol.NextResponse,
+        args: DebugProtocol.NextArguments
+    ): void {
         try {
-            this.runtime.step(true);
+            this.runtime.step(
+                /* next */ true,
+                /* stopAtCloseFrame */ false,
+                /* nextLineSkip */ true
+            );
         } catch (err) {
             response.success = false;
             response.message = err instanceof Error ? err.message : String(err);
@@ -190,10 +221,17 @@ export class MoveDebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
-    protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments): void {
+    protected stepInRequest(
+        response: DebugProtocol.StepInResponse,
+        args: DebugProtocol.StepInArguments
+    ): void {
         let terminate = false;
         try {
-            terminate = this.runtime.step(false);
+            terminate = this.runtime.step(
+                /* next */ false,
+                /* stopAtCloseFrame */ false,
+                /* nextLineSkip */ true
+            );
         } catch (err) {
             response.success = false;
             response.message = err instanceof Error ? err.message : String(err);
@@ -204,17 +242,27 @@ export class MoveDebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
-    protected stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepOutArguments): void {
+    protected stepOutRequest(
+        response: DebugProtocol.StepOutResponse,
+        args: DebugProtocol.StepOutArguments
+    ): void {
+        let terminate = false;
         try {
-            this.runtime.stepOut();
+            terminate = this.runtime.stepOut();
         } catch (err) {
             response.success = false;
             response.message = err instanceof Error ? err.message : String(err);
         }
+        if (terminate) {
+            this.sendEvent(new TerminatedEvent());
+        }
         this.sendResponse(response);
     }
 
-    protected stepBackRequest(response: DebugProtocol.StepBackResponse, args: DebugProtocol.StepBackArguments): void {
+    protected stepBackRequest(
+        response: DebugProtocol.StepBackResponse,
+        args: DebugProtocol.StepBackArguments
+    ): void {
         try {
             this.runtime.stepBack();
         } catch (err) {
@@ -224,8 +272,44 @@ export class MoveDebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
+    protected continueRequest(
+        response: DebugProtocol.ContinueResponse,
+        args: DebugProtocol.ContinueArguments
+    ): void {
+        let terminate = false;
+        try {
+            terminate = this.runtime.continue(/* reverse */ false);
+        } catch (err) {
+            response.success = false;
+            response.message = err instanceof Error ? err.message : String(err);
+        }
+        if (terminate) {
+            this.sendEvent(new TerminatedEvent());
+        }
+        this.sendResponse(response);
+    }
 
-    protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments): void {
+    protected reverseContinueRequest(
+        response: DebugProtocol.ReverseContinueResponse,
+        args: DebugProtocol.ReverseContinueArguments
+    ): void {
+        let terminate = false;
+        try {
+            terminate = this.runtime.continue(/* reverse */ true);
+        } catch (err) {
+            response.success = false;
+            response.message = err instanceof Error ? err.message : String(err);
+        }
+        if (terminate) {
+            this.sendEvent(new TerminatedEvent());
+        }
+        this.sendResponse(response);
+    }
+
+    protected disconnectRequest(
+        response: DebugProtocol.DisconnectResponse,
+        args: DebugProtocol.DisconnectArguments
+    ): void {
         // Cleanup and terminate the debug session
         this.sendEvent(new TerminatedEvent());
         this.sendResponse(response);

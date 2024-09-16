@@ -38,6 +38,7 @@ use crate::handlers::committer::start_tx_checkpoint_commit_task;
 use crate::handlers::tx_processor::IndexingPackageBuffer;
 use crate::metrics::IndexerMetrics;
 use crate::models::display::StoredDisplay;
+use crate::models::obj_indices::StoredObjectVersion;
 use crate::store::package_resolver::{IndexerStorePackageResolver, InterimPackageResolver};
 use crate::store::{IndexerStore, PgIndexerStore};
 use crate::types::{
@@ -254,6 +255,27 @@ impl CheckpointHandler {
         }))
     }
 
+    fn derive_object_versions(
+        object_history_changes: &TransactionObjectChangesToCommit,
+    ) -> Vec<StoredObjectVersion> {
+        let mut object_versions = vec![];
+        for changed_obj in object_history_changes.changed_objects.iter() {
+            object_versions.push(StoredObjectVersion {
+                object_id: changed_obj.object.id().to_vec(),
+                object_version: changed_obj.object.version().value() as i64,
+                cp_sequence_number: changed_obj.checkpoint_sequence_number as i64,
+            });
+        }
+        for deleted_obj in object_history_changes.deleted_objects.iter() {
+            object_versions.push(StoredObjectVersion {
+                object_id: deleted_obj.object_id.to_vec(),
+                object_version: deleted_obj.object_version as i64,
+                cp_sequence_number: deleted_obj.checkpoint_sequence_number as i64,
+            });
+        }
+        object_versions
+    }
+
     async fn index_checkpoint(
         state: &PgIndexerStore,
         data: CheckpointData,
@@ -272,6 +294,7 @@ impl CheckpointHandler {
             Self::index_objects(data.clone(), &metrics, package_resolver.clone()).await?;
         let object_history_changes: TransactionObjectChangesToCommit =
             Self::index_objects_history(data.clone(), package_resolver.clone()).await?;
+        let object_versions = Self::derive_object_versions(&object_history_changes);
 
         let (checkpoint, db_transactions, db_events, db_tx_indices, db_event_indices, db_displays) = {
             let CheckpointData {
@@ -327,6 +350,7 @@ impl CheckpointHandler {
             display_updates: db_displays,
             object_changes,
             object_history_changes,
+            object_versions,
             packages,
             epoch,
         })
@@ -709,7 +733,7 @@ async fn get_move_struct_layout_map(
                         move_core_types::annotated_value::MoveStructLayout,
                     ),
                     IndexerError,
-                >((struct_tag, move_struct_layout))
+                >((struct_tag, *move_struct_layout))
             }
         })
         .collect::<Vec<_>>();
@@ -745,18 +769,18 @@ fn try_create_dynamic_field_info(
             ))
         })?;
     let move_struct = move_object.to_move_struct(&move_struct_layout)?;
-    let (name_value, type_, object_id) =
+    let (move_value, type_, object_id) =
         DynamicFieldInfo::parse_move_object(&move_struct).tap_err(|e| warn!("{e}"))?;
     let name_type = move_object.type_().try_extract_field_name(&type_)?;
-    let bcs_name = bcs::to_bytes(&name_value.clone().undecorate()).map_err(|e| {
+    let bcs_name = bcs::to_bytes(&move_value.clone().undecorate()).map_err(|e| {
         IndexerError::SerdeError(format!(
             "Failed to serialize dynamic field name {:?}: {e}",
-            name_value
+            move_value
         ))
     })?;
     let name = DynamicFieldName {
         type_: name_type,
-        value: SuiMoveValue::from(name_value).to_json_value(),
+        value: SuiMoveValue::from(move_value).to_json_value(),
     };
     Ok(Some(match type_ {
         DynamicFieldType::DynamicObject => {

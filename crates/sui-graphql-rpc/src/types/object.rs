@@ -41,7 +41,7 @@ use diesel_async::scoped_futures::ScopedFutureExt;
 use move_core_types::annotated_value::{MoveStruct, MoveTypeLayout};
 use move_core_types::language_storage::StructTag;
 use serde::{Deserialize, Serialize};
-use sui_indexer::models::objects::{StoredDeletedHistoryObject, StoredHistoryObject};
+use sui_indexer::models::objects::StoredHistoryObject;
 use sui_indexer::schema::{objects_history, objects_version};
 use sui_indexer::types::ObjectStatus as NativeObjectStatus;
 use sui_indexer::types::OwnerType;
@@ -83,8 +83,8 @@ pub(crate) enum ObjectKind {
     /// An object fetched from the index.
     Indexed(NativeObject, StoredHistoryObject),
     /// The object is wrapped or deleted and only partial information can be loaded from the
-    /// indexer.
-    WrappedOrDeleted(StoredDeletedHistoryObject),
+    /// indexer. The `u64` is the version of the object.
+    WrappedOrDeleted(u64),
 }
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
@@ -118,11 +118,8 @@ pub(crate) struct ObjectRef {
 /// - AND, whose ID is in `objectIds` OR whose ID and version is in `objectKeys`.
 #[derive(InputObject, Default, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct ObjectFilter {
-    /// This field is used to specify the type of objects that should be included in the query
-    /// results.
-    ///
-    /// Objects can be filtered by their type's package, package::module, or their fully qualified
-    /// type name.
+    /// Filter objects by their type's `package`, `package::module`, or their fully qualified type
+    /// name.
     ///
     /// Generic types can be queried by either the generic type name, e.g. `0x2::coin::Coin`, or by
     /// the full type name, such as `0x2::coin::Coin<0x2::sui::SUI>`.
@@ -754,7 +751,7 @@ impl Object {
 
         match &self.kind {
             K::NotIndexed(native) | K::Indexed(native, _) => native.version().value(),
-            K::WrappedOrDeleted(stored) => stored.object_version as u64,
+            K::WrappedOrDeleted(object_version) => *object_version,
         }
     }
 
@@ -981,12 +978,7 @@ impl Object {
             }
             NativeObjectStatus::WrappedOrDeleted => Ok(Self {
                 address,
-                kind: ObjectKind::WrappedOrDeleted(StoredDeletedHistoryObject {
-                    object_id: history_object.object_id,
-                    object_version: history_object.object_version,
-                    object_status: history_object.object_status,
-                    checkpoint_sequence_number: history_object.checkpoint_sequence_number,
-                }),
+                kind: ObjectKind::WrappedOrDeleted(history_object.object_version as u64),
                 checkpoint_viewed_at,
                 root_version: history_object.object_version as u64,
             }),
